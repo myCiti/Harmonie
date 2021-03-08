@@ -109,10 +109,10 @@ def writePin(pin, pause):
         Output[pin].value(0)
         if pin == 'Open':
             lcd.clear()
-            lcd.write_line_center("EN OUVERTURE " + str(state), 1)
+            lcd.write_line_center("EN OUVERTURE ", 1)
         else:
             lcd.clear()
-            lcd.write_line_center("EN FERMETURE " + str(state), 1)
+            lcd.write_line_center("EN FERMETURE ", 1)
 
 def lcd_count_down(duration):
     """count down in second"""
