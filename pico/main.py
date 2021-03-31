@@ -1,12 +1,19 @@
+###########
+## Version 0.1
+## Input pins wired with PULL_DOWN
+##
+##########
+
 import machine as m
 import utime
 import ujson
-import _thread
+import micropython
+import gc
 from lcd_api import LcdApi
 from pico_i2c_lcd import I2cLcd
 
 ### default times if not config file not found
-filename = 'timer_config.json'
+filename = 'harmonie_config.json'
 Timers = {
     'Opn1' : 5,
     'Opn2' : 5,
@@ -16,20 +23,21 @@ Timers = {
 
 ### input pins
 inputPin = {
-    "Open"     : 21,
-    "Close"    : 20,
-    "Stop"     : 19,
-    "OpenLmt"  : 27,
-    "CloseLmt" : 26,
-    "Prog"     : 13,
-    "Up"       : 14,
-    "Down"     : 15
+    "Open"     : 4,
+    "Close"    : 5,
+    "Stop"     : 6,
+    "OpenLmt"  : 3,
+    "CloseLmt" : 2,
+    "Prog"     : 9,
+    "Up"       : 8,
+    "Down"     : 7
     }
 
 outputPin = {
-    "Open"     : 17,
-    "Close"    : 16,
-    "Stop"     : 16
+    "Open"     : 10,
+    "Close"    : 11,
+    "Stop"     : 12,
+    "Spare"    : 13
     }
 
 Input = {}
@@ -51,19 +59,10 @@ prog_mode_delay = 3      # delay for press and hold before entre prog mode
 press_duration = 100     # in ms, simulate duration of presssing a button
 
 for p in inputPin:
-    Input[p] = m.Pin(inputPin[p], m.Pin.IN)
+    Input[p] = m.Pin(inputPin[p], m.Pin.IN, m.Pin.PULL_DOWN)
 
 for p in outputPin:
     Output[p] = m.Pin(outputPin[p], m.Pin.OUT)
-
-# try:
-#     with open(filename) as infile:
-#         data = ujson.load(infile)
-#         for p in data:
-#             Timers[p] = data[p]
-# except OSError:
-#     with open(filename, 'w') as outfile:
-#         ujson.dump(Timers, outfile)
 
 def load_file(file):
     """Load json file configuration."""
@@ -103,16 +102,19 @@ def initialize():
     
 def writePin(pin, pause):
     """Write high value to pin, pause in ms"""
+    
     if not stop_request:
-        Output[pin].value(1)
-        utime.sleep_ms(pause)
-        Output[pin].value(0)
-        if pin == 'Open':
+        if pin == 'Open' and Input['OpenLmt'].value() != 1:
+            Output[pin].value(1)
             lcd.clear()
             lcd.write_line_center("EN OUVERTURE ", 1)
-        else:
+        elif pin == 'Close' and Input['CloseLmt'].value() != 1:
+            Output[pin].value(1)
             lcd.clear()
             lcd.write_line_center("EN FERMETURE ", 1)
+        
+        utime.sleep_ms(pause)
+        Output[pin].value(0)
 
 def lcd_count_down(duration):
     """count down in second"""
@@ -121,18 +123,18 @@ def lcd_count_down(duration):
         lcd.write_line("{0:2}".format(i), 2, 13)
         if stop_request:
             break
+        elif state == 3 and Input['CloseLmt'].value():
+            break
         utime.sleep(1)
 
 def stop_signal_handler(pin):
     """Send stop_request when activate"""
-    #Input['Stop'].irq(handler=None)
+    
     global stop_request
     stop_request = True
-    Input['Stop'].irq(handler=stop_signal_handler)
-    #while True:
-    #   if Input['Stop'].value():
-    #        stop_request = True
-    #        m.enable_irq()
+    Output['Stop'].value(1)
+    utime.sleep_ms(press_duration)
+    Output['Stop'].value(0)
 
 def Logic_loop():
     """The main state logic. Core program"""
@@ -159,6 +161,8 @@ def Logic_loop():
                 lcd_count_down(Timers['Cls'])
                 writePin('Open', press_duration)
                 state = 2
+                gc.collect()        # force gc collection
+                #print(gc.mem_free())
         elif state == 2:            # door fully opened, before mid-stop
             if Input['OpenLmt'].value():
                 lcd.clear()
@@ -184,8 +188,6 @@ def Logic_loop():
                 state = 1
         else:
             print("ERREUR")
-        #gc.collect()
-        #gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
 
 def change_timers():
     global in_prog_mode
@@ -227,19 +229,17 @@ def change_timers():
                     value += 1
                     lcd.write_line("{0:<5}".format(value), 2, 7)
                     is_timers_changed = True
-                    utime.sleep_ms(300)
+                    utime.sleep_ms(500)
                 while Input['Down'].value():
                     value -= 1
                     is_timers_changed = True
                     if value <= 0:
                         value = 0
                     lcd.write_line("{0:<5}".format(value), 2, 7)
-                    utime.sleep_ms(300)
+                    utime.sleep_ms(500)
             except StopIteration:
                 iterTimers = iter(Timers.items())
 
-# initialize before first run
-initialize()
 
 def main():
     """Main program, call others functions"""
@@ -252,6 +252,8 @@ def main():
         load_file(filename)
     except OSError:
         write_file(filename)
+    
+    initialize()
     
     #_thread.start_new_thread(stop_signal_handler, ())
     
@@ -272,6 +274,3 @@ if __name__ == '__main__':
     main()
     #change_timers()
        
-## test file
-#for p in config:
-#    print(str(p) + ':' + str(config[p]))
