@@ -1,13 +1,13 @@
 ###########
-## Version 0.1
+## Version 0.3
 ## Input pins wired with PULL_DOWN
-##
+##  Mid-stop = 0 to disable
 ##########
 
-import machine as m
+from machine import Pin, I2C
 import utime
 import ujson
-import micropython
+#import micropython
 import gc
 from lcd_api import LcdApi
 from pico_i2c_lcd import I2cLcd
@@ -16,9 +16,9 @@ from pico_i2c_lcd import I2cLcd
 filename = 'harmonie_config.json'
 Timers = {
     'Opn1' : 5,
-    'Opn2' : 5,
-    'Cls'  : 10,
-    'Mid'  : 9
+    'Cls'  : 5,
+    'Mid'  : 6,
+    'Opn2' : 8
     }
 
 ### input pins
@@ -47,7 +47,7 @@ Output = {}
 I2C_ADDR     = 0x27
 I2C_NUM_ROWS = 2
 I2C_NUM_COLS = 16
-i2c = m.I2C(0, sda=m.Pin(0), scl=m.Pin(1), freq=400000)
+i2c = I2C(0, sda=Pin(0), scl=Pin(1), freq=400000)
 lcd = I2cLcd(i2c, I2C_ADDR, I2C_NUM_ROWS, I2C_NUM_COLS)  
 
 ### some global variables
@@ -56,13 +56,15 @@ stop_request = False
 is_running = False
 in_prog_mode = False
 prog_mode_delay = 3      # delay for press and hold before entre prog mode
-press_duration = 100     # in ms, simulate duration of presssing a button
+press_duration = 150     # in ms, simulate duration of presssing a button
+counter_readPin = 1      # How many times pins are read to determine good signal
+delay_readPin = 1        # delay between each iteration to read pin
 
 for p in inputPin:
-    Input[p] = m.Pin(inputPin[p], m.Pin.IN, m.Pin.PULL_DOWN)
+    Input[p] = Pin(inputPin[p], Pin.IN, Pin.PULL_DOWN)
 
 for p in outputPin:
-    Output[p] = m.Pin(outputPin[p], m.Pin.OUT)
+    Output[p] = Pin(outputPin[p], Pin.OUT)
 
 def load_file(file):
     """Load json file configuration."""
@@ -92,6 +94,9 @@ def initialize():
     for p in Output:
         Output[p].value(0)
         
+    ## make sure that open after mid-top is 0 if no mid-stop
+    Timers['Opn2'] = 0 if Timers['Mid'] == 0 else Timers['Opn2']
+    
     lcd.clear()
     lcd.write_line_center("HARMONIE", 1)
     lcd.write_line_center("BIENVENUE", 2)
@@ -100,6 +105,20 @@ def initialize():
     lcd.write_line("Cls:{0:<3},Opn1:{1:<3}".format(Timers['Cls'], Timers['Opn1']), 1)
     lcd.write_line("Mid:{0:<3},Opn2:{1:<3}".format(Timers['Mid'], Timers['Opn2']), 2)
     
+def readPin(pin, counter = counter_readPin, delay = delay_readPin):
+    """Read pin a number of times to determine good signal, delay in msec"""
+    read_count = 0
+    
+    for i in range(counter):
+        if Input[pin].value():
+            read_count += 1
+        utime.sleep_ms(delay)
+            
+    if read_count == counter:
+        return True
+    
+    return False
+
 def writePin(pin, pause):
     """Write high value to pin, pause in ms"""
     
@@ -130,11 +149,19 @@ def lcd_count_down(duration):
 def stop_signal_handler(pin):
     """Send stop_request when activate"""
     
+    read_count = 0
     global stop_request
-    stop_request = True
-    Output['Stop'].value(1)
-    utime.sleep_ms(press_duration)
-    Output['Stop'].value(0)
+    
+    for i in range(counter_readPin):
+        if Input['Stop'].value:
+            read_count += 1
+        utime.sleep_ms(delay_readPin)
+        
+    if read_count == counter_readPin: 
+        stop_request = True
+        Output['Stop'].value(1)
+        utime.sleep_ms(press_duration)
+        Output['Stop'].value(0)
 
 def Logic_loop():
     """The main state logic. Core program"""
@@ -147,10 +174,10 @@ def Logic_loop():
     while not stop_request:
         
         if state == 0:              # initial state
-            if Input['Close'].value():
+            if readPin('Close'):
                 writePin('Close', press_duration)
                 state = 1
-            elif Input['Open'].value():
+            elif readPin('Open'):
                 writePin('Open', press_duration)
                 state = 2
         elif state == 1:            # door fully closed, close limit triggers
@@ -164,13 +191,13 @@ def Logic_loop():
                 gc.collect()        # force gc collection
                 #print(gc.mem_free())
         elif state == 2:            # door fully opened, before mid-stop
-            if Input['OpenLmt'].value():
+            if readPin('OpenLmt'):
                 lcd.clear()
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd.write_line("FERMETURE:", 2, 2)
                 lcd_count_down(Timers['Opn1'])
                 writePin('Close', press_duration)
-                state = 3
+                state = 1 if Timers['Mid'] == 0 else 3
         elif state == 3:             # mi-stop
             lcd.clear()
             lcd.write_line_center("MI-ARRET", 1)
@@ -179,7 +206,7 @@ def Logic_loop():
             writePin('Open', press_duration)
             state = 4
         elif state == 4:              # door fully opened, after mid-stop
-            if Input['OpenLmt'].value():
+            if readPin('OpenLmt'):
                 lcd.clear()
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd.write_line("FERMETURE:", 2, 2)
@@ -211,9 +238,9 @@ def change_timers():
     if in_prog_mode:
         iterTimers = iter(Timers.items())
         is_timers_changed = False
-        while not Input['Stop'].value():
+        while not readPin('Stop'):
             try:
-                if Input['Prog'].value():
+                if readPin('Prog'):
                     if is_timers_changed:
                         Timers.update({key : value})
                         write_file(filename)
@@ -225,12 +252,12 @@ def change_timers():
                     lcd.write_line(key + space, 2, 1)
                     lcd.write_line("{0:<5}".format(value), 2, 7)
                     utime.sleep_ms(500)
-                while Input['Up'].value():
+                while readPin('Up'):
                     value += 1
                     lcd.write_line("{0:<5}".format(value), 2, 7)
                     is_timers_changed = True
                     utime.sleep_ms(500)
-                while Input['Down'].value():
+                while readPin('Down'):
                     value -= 1
                     is_timers_changed = True
                     if value <= 0:
@@ -259,16 +286,17 @@ def main():
     
     while True:
         if not is_running:
-            if Input['Close'].value() or Input['Open'].value():
+            if readPin('Close') or readPin('Open'):
                 Logic_loop()
-            elif Input['Prog'].value():
+            elif readPin('Prog'):
                 change_timers()
         if stop_request:
             initialize()
             
 
 # listen to Stop interrupt
-Input['Stop'].irq(trigger=m.Pin.IRQ_RISING, handler=stop_signal_handler)
+Input['Stop'].irq(trigger=Pin.IRQ_RISING, handler=stop_signal_handler)
+
 
 if __name__ == '__main__':
     main()
