@@ -1,5 +1,5 @@
 ###########
-## Version 0.3
+## Version 0.4
 ## Input pins wired with PULL_DOWN
 ##  Mid-stop = 0 to disable
 ##########
@@ -102,8 +102,8 @@ def initialize():
     lcd.write_line_center("BIENVENUE", 2)
     utime.sleep(2)
     lcd.clear()
-    lcd.write_line("Cls:{0:<3},Opn1:{1:<3}".format(Timers['Cls'], Timers['Opn1']), 1)
-    lcd.write_line("Mid:{0:<3},Opn2:{1:<3}".format(Timers['Mid'], Timers['Opn2']), 2)
+    lcd.write_line("Cls:{0:>3},Opn1:{1:>3}".format(Timers['Cls'], Timers['Opn1']), 1)
+    lcd.write_line("Mid:{0:>3},Opn2:{1:>3}".format(Timers['Mid'], Timers['Opn2']), 2)
     
 def readPin(pin, counter = counter_readPin, delay = delay_readPin):
     """Read pin a number of times to determine good signal, delay in msec"""
@@ -139,7 +139,7 @@ def lcd_count_down(duration):
     """count down in second"""
     global stop_request
     for i in reversed(range(1, duration+1)):
-        lcd.write_line("{0:2}".format(i), 2, 13)
+        lcd.write_line("{0:>3}".format(i), 2, 12)
         if stop_request:
             break
         elif state == 3 and Input['CloseLmt'].value():
@@ -250,20 +250,20 @@ def change_timers():
                     key, value = next(iterTimers)
                     space = ' :' if len(key) <= 3 else ':'
                     lcd.write_line(key + space, 2, 1)
-                    lcd.write_line("{0:<5}".format(value), 2, 7)
-                    utime.sleep_ms(500)
+                    lcd.write_line("{0:>3}".format(value), 2, 6)
+                    utime.sleep_ms(300)
                 while readPin('Up'):
                     value += 1
-                    lcd.write_line("{0:<5}".format(value), 2, 7)
+                    lcd.write_line("{0:>3}".format(value), 2, 6)
                     is_timers_changed = True
-                    utime.sleep_ms(500)
+                    utime.sleep_ms(300)
                 while readPin('Down'):
                     value -= 1
                     is_timers_changed = True
                     if value <= 0:
                         value = 0
-                    lcd.write_line("{0:<5}".format(value), 2, 7)
-                    utime.sleep_ms(500)
+                    lcd.write_line("{0:>3}".format(value), 2, 6)
+                    utime.sleep_ms(300)
             except StopIteration:
                 iterTimers = iter(Timers.items())
 
