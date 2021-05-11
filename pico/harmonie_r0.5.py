@@ -52,8 +52,8 @@ I2C_NUM_COLS = 20
 i2c = I2C(0, sda=Pin(0), scl=Pin(1), freq=400000)
 lcd = I2cLcd(i2c, I2C_ADDR, I2C_NUM_ROWS, I2C_NUM_COLS)
 
-current_sensor = ADC(0)    # read curent at ADC(0)
-temps_sensor = ADC(1)      # read temps at ADC(1)
+current_sensor = ADC(1)    # read curent at ADC(0)
+temps_sensor = ADC(2)      # read temps at ADC(1)
 
 current_timer = Timer()
 temps_timer = Timer()
@@ -106,7 +106,7 @@ def initialize():
     Timers['Opn2'] = 0 if Timers['Mid'] == 0 else Timers['Opn2']
     
     current_timer.deinit()
-    temps_timer.deinit()
+    #temps_timer.deinit()
     
     lcd.clear()
     lcd.write_line_center("HARMONIE V" + str(version), 1)
@@ -136,19 +136,27 @@ def writePin(pin, pause):
     if not stop_request:
         if pin == 'Open' and Input['OpenLmt'].value() != 1:
             Output[pin].value(1)
-            lcd.clear()
+            lcd.clear_line(1)
+            lcd.clear_line(2)
             lcd.write_line_center("EN OUVERTURE ", 1)
         elif pin == 'Close' and Input['CloseLmt'].value() != 1:
             Output[pin].value(1)
-            lcd.clear()
+            lcd.clear_line(1)
+            lcd.clear_line(2)
             lcd.write_line_center("EN FERMETURE ", 1)
         
         utime.sleep_ms(pause)
         Output[pin].value(0)
+        
+        # start reading current
+        current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current)
 
 def lcd_count_down(duration):
     """count down in second"""
     global stop_request
+    
+    # stop reading current
+    current_timer.deinit()
     
     if state == 1 or state == 3: # clsLmt activated, door will open
         msg = "OUVERTURE:"
@@ -162,7 +170,10 @@ def lcd_count_down(duration):
         elif state == 3 and Input['CloseLmt'].value():
             break
         utime.sleep(1)
-
+    
+    # restart reading current
+    #current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current)
+    
 def stop_signal_handler(pin):
     """Send stop_request when activate"""
     
@@ -188,8 +199,8 @@ def read_current(timer):
     lcd.write_line_center("Courant: {0:>.2f} A".format(voltage), 3)
 
 
-def read_temps(timer):
-    """Read temperatur"""
+def read_temps():
+    """Read temperature"""
     
     voltage = (3.3/65535) * temps_sensor.read_u16()
     temps = (voltage - 0.5) * 100
@@ -204,8 +215,8 @@ def Logic_loop():
     is_running = True
     
     ## start reading current
-    current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current) # freq in Hz
-    temps_timer.init(freq=.5, mode=Timer.PERIODIC, callback=read_temps)
+    #current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current) # freq in Hz
+    #temps_timer.init(freq=.5, mode=Timer.PERIODIC, callback=read_temps)
     
     while not stop_request:
         
@@ -218,8 +229,10 @@ def Logic_loop():
                 state = 2
         elif state == 1:            # door fully closed, close limit triggers
             if Input['CloseLmt'].value():
-                lcd.clear()
+                current_timer.deinit()
+                lcd.clear_line(1)
                 lcd.write_line_center("PORTE FERMEE", 1)
+                read_temps()    # read and show temperature
                 lcd_count_down(Timers['Cls'])
                 writePin('Open', press_duration)
                 state = 2
@@ -227,20 +240,22 @@ def Logic_loop():
                 #print(gc.mem_free())
         elif state == 2:            # door fully opened, before mid-stop
             if readPin('OpenLmt'):
-                lcd.clear()
+                current_timer.deinit()
+                lcd.clear_line(1)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn1'])
                 writePin('Close', press_duration)
                 state = 1 if Timers['Mid'] == 0 else 3
         elif state == 3:             # mi-stop
-            lcd.clear()
+            lcd.clear_line(1)
             lcd.write_line_center("MI-ARRET", 1)
             lcd_count_down(Timers['Mid'])
             writePin('Open', press_duration)
             state = 4
         elif state == 4:              # door fully opened, after mid-stop
             if readPin('OpenLmt'):
-                lcd.clear()
+                current_timer.deinit()
+                lcd.clear_line(1)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn2'])
                 writePin('Close', press_duration)
@@ -286,14 +301,16 @@ def change_timers():
                     utime.sleep_ms(300)
                 while readPin('Up'):
                     value += 1
+                    if value > 999:
+                        value = 0
                     lcd.write_line("{0:>3}".format(value), 2, 8)
                     is_timers_changed = True
                     utime.sleep_ms(300)
                 while readPin('Down'):
                     value -= 1
+                    if value < 0:
+                        value = 999
                     is_timers_changed = True
-                    if value <= 0:
-                        value = 0
                     lcd.write_line("{0:>3}".format(value), 2, 8)
                     utime.sleep_ms(300)
             except StopIteration:

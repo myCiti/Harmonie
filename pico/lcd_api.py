@@ -175,6 +175,10 @@ class LcdApi:
         """Write sting to center of lcd, at specified line."""
         pos = (self.num_columns - len(string)) //2
         self.write_line(string, line, pos+1)
+    
+    def clear_line(self, line):
+        """Clear one specific line"""
+        self.write_line(' ' * self.num_columns, line)
         
     def hal_backlight_on(self):
         # Allows the hal layer to turn the backlight on.
