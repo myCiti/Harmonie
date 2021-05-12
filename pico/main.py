@@ -238,7 +238,7 @@ def change_timers():
     if in_prog_mode:
         iterTimers = iter(Timers.items())
         is_timers_changed = False
-        while not readPin('Stop'):
+        while not stop_request:
             try:
                 if readPin('Prog'):
                     if is_timers_changed:

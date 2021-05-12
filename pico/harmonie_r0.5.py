@@ -64,7 +64,7 @@ stop_request = False
 is_running = False
 in_prog_mode = False
 prog_mode_delay = 3      # delay for press and hold before entre prog mode
-press_duration = 150     # in ms, simulate duration of presssing a button
+press_duration = 500     # in ms, simulate duration of presssing a button
 counter_readPin = 1      # How many times pins are read to determine good signal
 delay_readPin = 1        # delay between each iteration to read pin
 
@@ -285,7 +285,7 @@ def change_timers():
     if in_prog_mode:
         iterTimers = iter(Timers.items())
         is_timers_changed = False
-        while not readPin('Stop'):
+        while not stop_request:
             try:
                 if readPin('Prog'):
                     if is_timers_changed:
