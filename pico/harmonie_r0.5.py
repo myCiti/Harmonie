@@ -228,7 +228,7 @@ def Logic_loop():
                 writePin('Open', press_duration)
                 state = 2
         elif state == 1:            # door fully closed, close limit triggers
-            if Input['CloseLmt'].value():
+            if readPin(CloseLmt):
                 current_timer.deinit()
                 lcd.clear_line(1)
                 lcd.write_line_center("PORTE FERMEE", 1)
