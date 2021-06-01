@@ -149,7 +149,7 @@ def writePin(pin, pause):
         Output[pin].value(0)
         
         # start reading current
-        current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current)
+        # current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current)
 
 def lcd_count_down(duration):
     """count down in second"""
@@ -214,10 +214,6 @@ def Logic_loop():
     
     is_running = True
     
-    ## start reading current
-    #current_timer.init(freq=5, mode=Timer.PERIODIC, callback=read_current) # freq in Hz
-    #temps_timer.init(freq=.5, mode=Timer.PERIODIC, callback=read_temps)
-    
     while not stop_request:
         
         if state == 0:              # initial state
@@ -228,7 +224,7 @@ def Logic_loop():
                 writePin('Open', press_duration)
                 state = 2
         elif state == 1:            # door fully closed, close limit triggers
-            if readPin(CloseLmt):
+            if readPin('CloseLmt'):
                 current_timer.deinit()
                 lcd.clear_line(1)
                 lcd.write_line_center("PORTE FERMEE", 1)
@@ -247,6 +243,7 @@ def Logic_loop():
                 writePin('Close', press_duration)
                 state = 1 if Timers['Mid'] == 0 else 3
         elif state == 3:             # mi-stop
+            current_timer.deinit()
             lcd.clear_line(1)
             lcd.write_line_center("MI-ARRET", 1)
             lcd_count_down(Timers['Mid'])
