@@ -207,7 +207,7 @@ def read_current(timer):
         if max_voltage < voltage:
             max_voltage = voltage
         counter += 1
-        utime.sleep_us(10)
+        utime.sleep_us(50)
     amp = (max_voltage * conversion_factor - voltage_ref) * sensitivity_factor
     lcd.write_line_center("Courant:{0:>5.1f} A {1}".format(amp, counter), 3)
 
