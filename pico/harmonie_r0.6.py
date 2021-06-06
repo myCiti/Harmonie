@@ -148,8 +148,8 @@ def writePin(pin, delay):
         
         utime.sleep_ms(delay)
         Output[pin].value(0)
-        # start reading current
-        current_timer.init(freq=3, mode=Timer.PERIODIC, callback=read_current)
+    # start reading current
+    current_timer.init(freq=3, mode=Timer.PERIODIC, callback=read_current)
 
 def lcd_count_down(duration):
     """count down in second"""
@@ -193,6 +193,8 @@ def stop_signal_handler(pin):
 def read_current(timer):
     """Read current in amp"""
     
+    global stop_request
+    
     conversion_factor = 3.3/65535
     sensitivity_factor = 10
     counter = 0
@@ -202,14 +204,14 @@ def read_current(timer):
     reading_duration_ms = 30
     start_time = utime.ticks_ms()
 
-    while utime.ticks_diff(utime.ticks_ms(), start_time) < reading_duration_ms:
+    while utime.ticks_diff(utime.ticks_ms(), start_time) < reading_duration_ms and not stop_request:
         voltage = current_sensor.read_u16()
         if max_voltage < voltage:
             max_voltage = voltage
         counter += 1
         utime.sleep_us(50)
     amp = (max_voltage * conversion_factor - voltage_ref) * sensitivity_factor
-    lcd.write_line_center("Courant:{0:>5.1f} A {1}".format(amp, counter), 3)
+    lcd.write_line_center("Courant:{0:>5.1f} A".format(amp), 3)
 
 
 def read_temp():
