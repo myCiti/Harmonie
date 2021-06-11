@@ -13,6 +13,7 @@ import ujson
 import gc
 from lcd_api import LcdApi
 from pico_i2c_lcd import I2cLcd
+from math import sqrt
 
 ### default times if not config file not found
 filename = 'harmonie_config.json'
@@ -64,7 +65,7 @@ state = 0
 stop_request = False
 is_running = False
 in_prog_mode = False
-prog_mode_delay = 3      # delay for press and hold before entre prog mode
+prog_mode_delay = 1      # delay for press and hold before entre prog mode
 press_duration = 500     # in ms, simulate duration of presssing a button
 counter_readPin = 1      # How many times pins are read to determine good signal
 delay_readPin = 1        # delay between each iteration to read pin
@@ -330,6 +331,60 @@ def change_timers():
             except StopIteration:
                 iterTimers = iter(Timers.items())
 
+current_line = 1
+shift = 0
+menu = ["Minuterie", "Voltage", "Temperateur", "ChavTha", "Dan", "Manaras", "Harmonie"]
+#menu = ["Minuterie", "Voltage", "Temperateur"]
+total_lines = min(I2C_NUM_ROWS, len(menu))
+
+def show_menu():
+    """Show menu on lcd"""
+    
+    line = 1
+    short_list = menu[shift:shift + total_lines]
+    
+    lcd.clear()
+    for item in short_list:
+        if current_line == line:
+            lcd.write_line('>>', line, 2)
+        lcd.write_line(item.upper(), line, 5)
+        line += 1
+
+def Configuration():
+    
+    global in_prog_mode, current_line, shift, total_lines
+    
+    hold_counter = 0
+ 
+    while True:
+        if hold_counter >= prog_mode_delay :
+            in_prog_mode = True
+            lcd.clear()
+            break
+        elif readPin('Prog'):
+            hold_counter += 1
+        else:
+            hold_counter = 0
+        utime.sleep(1)
+        
+    show_menu()
+    while in_prog_mode and not stop_request:
+        
+        if readPin('Up') or readPin('Down'):
+            if readPin('Up'):
+                if current_line < total_lines:
+                    current_line += 1
+                elif shift + total_lines < len(menu):
+                    shift += 1
+            elif readPin('Down'):
+                if current_line > 1:
+                    current_line -= 1
+                elif shift > 0 :
+                    shift -= 1
+        
+            show_menu()
+        utime.sleep_ms(100)
+        
 
 def main():
     """Main program, call others functions"""
@@ -352,7 +407,7 @@ def main():
             if readPin('Close') or readPin('Open'):
                 Logic_loop()
             elif readPin('Prog'):
-                change_timers()
+                Configuration()
         if stop_request:
             initialize()
             
