@@ -1,5 +1,5 @@
 ###########
-version = 0.6
+version = 0.7
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -17,12 +17,27 @@ from math import sqrt
 
 ### default times if not config file not found
 filename = 'harmonie_config.json'
-Timers = {
-    'Opn1' : 5,
-    'Cls'  : 5,
-    'Mid'  : 6,
-    'Opn2' : 8
+fdata = {
+    'Timers'        :   {
+        'Opn1'      : 5,
+        'Cls'       : 5,
+        'Mid'       : 6,
+        'Opn2'      : 8
+    },
+    'Current'       :   {
+        'Status'    : 'Active',
+        'Type'      : 'AC',
+        'V_max'     : 3.3,
+        'V0_ref'    : 1.525,
+        'Factor'    : 60
+    },
+    'Temp'          :   {
+        'Status'    : 'Inactive',
+        'V_max'     : 3.3,
+        'V0_ref'    : 0.5,
+        'Factor'    : 10
     }
+}
 
 ### input pins
 inPin = {
@@ -42,7 +57,7 @@ outPin = {
     "Stop"     : 12,
     "Spare"    : 13
     }
-
+   
 Input = dict((name, Pin(pin, Pin.IN, Pin.PULL_DOWN)) for (name, pin) in inPin.items())
 Output = dict((name, Pin(pin, Pin.OUT)) for (name, pin) in outPin.items())
 
@@ -65,23 +80,35 @@ state = 0
 stop_request = False
 is_running = False
 in_prog_mode = False
-prog_mode_delay = 1      # delay for press and hold before entre prog mode
+prog_mode_delay = 2      # delay for press and hold before entre prog mode
 press_duration = 500     # in ms, simulate duration of presssing a button
 counter_readPin = 1      # How many times pins are read to determine good signal
 delay_readPin = 1        # delay between each iteration to read pin
 
+### menu
+menu = ["Minuterie", "Courant", "Temperature", "ChavTha", "Dan", "Manaras", "Harmonie"]
+menu_current_line = 1
+menu_current_level = 0
+menu_shift = 0
+menu_total_lines = min(I2C_NUM_ROWS, len(menu))
+
+Timers = {}
+Current = {}
+Temp = {}
+
 def load_file(file):
     """Load json file configuration."""
-    global Timers
-    with open(file) as infile:
+    global Timers, Current, Temp
+    with open(file, 'r') as infile:
         data = ujson.load(infile)
-        for p in data:
-            Timers[p] = data[p]
+        Timers = data['Timers']
+        Current = data['Current']
+        Temp = data['Temp']
 
 def write_file(file):
     """write config to file"""
     with open(file, 'w') as outfile:
-        ujson.dump(Timers, outfile)
+        ujson.dump(fdata, outfile)
 
 def initialize():
     """initialization before each run"""
@@ -89,8 +116,10 @@ def initialize():
     global stop_request
     global is_running
     global in_prog_mode
+    global menu_current_line, menu_shift, menu_current_level
     
     state = 0
+    menu_current_line = menu_shift = menu_current_level = 0
     stop_request = False
     is_running = False
     in_prog_mode = False
@@ -145,8 +174,10 @@ def writePin(pin, delay):
         
         utime.sleep_ms(delay)
         Output[pin].value(0)
+        
     # start reading current
-    current_timer.init(freq=4, mode=Timer.PERIODIC, callback=read_current)
+    if Current['Status'] == 'Active':
+        current_timer.init(freq=4, mode=Timer.PERIODIC, callback=read_current)
 
 def lcd_count_down(duration):
     """count down in second"""
@@ -193,12 +224,9 @@ def read_current(timer):
     
     global stop_request
     
-    conversion_factor = 3.3/65535
-    sensitivity_factor = 10
     counter = 0
     max_voltage = 0
     voltage = 0
-    voltage_ref = 1.685
     reading_duration_ms = 30
     start_time = utime.ticks_ms()
 
@@ -207,15 +235,15 @@ def read_current(timer):
         if max_voltage < voltage:
             max_voltage = voltage
         utime.sleep_us(50)
-    amp = (max_voltage * conversion_factor - voltage_ref) * sensitivity_factor
+    amp = (max_voltage * Current['V_max']/65535 - Current['V0_ref']) * (1000/Current['Factor'])
     lcd.write_line_center("Courant:{0:>5.1f} A".format(amp), 3)
 
 
 def read_temp():
     """Read temperature"""
     
-    voltage = (3.3/65535) * temp_sensor.read_u16()
-    temp = (voltage - 0.5) * 100
+    voltage = (Temp['V_max']/65535) * temp_sensor.read_u16()
+    temp = (voltage - Temp['V0_ref']) * (1000/Temp['Factor'])
     lcd.write_line_center('Temp: {0:>5.1f} '.format(temp) + chr(223) + 'C', 4)
 
 def Logic_loop():
@@ -241,7 +269,10 @@ def Logic_loop():
                 lcd.clear_line(1)
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE FERMEE", 1)
-                read_temp()    # read and show temperature
+                
+                if Temp['Status'] == 'Active':
+                    read_temp()    # read and show temperature
+                    
                 lcd_count_down(Timers['Cls'])
                 writePin('Open', press_duration)
                 state = 2
@@ -275,84 +306,217 @@ def Logic_loop():
                 state = 1
         else:
             print("ERREUR")
-        
-def change_timers():
-    global in_prog_mode
-    global Timers
-    # press and hold to enter into programming mode
-    hold_counter = 0
-    key = ''
-    value = 0
-
-    while True:
-        if hold_counter >= prog_mode_delay :
-            in_prog_mode = True
-            lcd.clear()
-            lcd.write_line_center("PROG: MINUTERIE", 1)
-            break
-        elif Input['Prog'].value():
-            hold_counter += 1
-        else:
-            hold_counter = 0
-        utime.sleep(1)
     
-    #utime.sleep(1)
-    if in_prog_mode:
-        iterTimers = iter(Timers.items())
-        is_timers_changed = False
-        while not stop_request:
-            try:
-                if readPin('Prog'):
-                    if is_timers_changed:
-                        Timers.update({key : value})
-                        write_file(filename)
-                        load_file(filename)
-                        is_timers_changed = False
-                        
-                    key, value = next(iterTimers)
-                    space = ' :' if len(key) <= 3 else ':'
-                    lcd.write_line(key + space, 2, 3)
-                    lcd.write_line("{0:>3}".format(value), 2, 8)
-                    utime.sleep_ms(300)
-                while readPin('Up'):
+
+def Config_Timers():
+    """Configuration for timers open/close and mid-stop"""
+    
+    global menu_current_level, Timers, fdata
+    is_value_modified = False
+    
+    menu_current_level = 2
+    
+    TimersItems = iter(Timers.items())
+    
+    lcd.clear()
+    
+    while not stop_request:
+        try:
+            if readPin('Prog'):
+                if is_value_modified:
+                    Timers.update({key : value})
+                    fdata['Timers'] = Timers
+                    write_file(filename)
+                    load_file(filename)
+                    is_value_modified = False
+                    
+                key, value = next(TimersItems)
+                blank_space = ' ' if len(key) <= 3 else ''
+                
+            elif readPin('Up'):
+                value += 1
+                if value > 999:
+                    value = 0
+                is_value_modified = True
+                
+            elif readPin('Down'):
+                value -= 1
+                if value < 0:
+                    value = 999
+                is_value_modified = True
+            lcd.write_line_center("{0}{1}:{2:>3}".format(key.upper(), blank_space, value),  2)
+            utime.sleep_ms(5)
+                
+        except StopIteration:
+            TimersItems = iter(Timers.items())
+        
+    
+def Config_Current():
+    """Configuration for current sensor."""
+    
+    global Current, fdata
+    is_value_modified = False
+    
+    CurrentItems = iter(Current.items())
+    
+    lcd.clear()
+    
+    while not stop_request:
+        try:
+            if readPin('Prog'):
+                if is_value_modified:
+                    Current.update({key: value})
+                    fdata['Current'] = Current
+                    write_file(filename)
+                    load_file(filename)
+                    is_value_modified = False
+                
+                key, value = next(CurrentItems)
+                blank_space = ' ' if len(key) <= 3 else ''
+                
+                if key in ['Status', 'Type']:
+                    format_str = "{2:<8}"
+                elif key == 'Factor':
+                    format_str = "{2:<8}"
+                    lcd.write_line_center('xyz mV/A', 3)
+                elif key  == 'V_max':
+                    format_str = "{2:<8.1f}"
+                elif key == 'V0_ref':
+                    format_str = "{2:<8.3f}"
+                else:
+                    lcd.clear_line(3)
+                
+            elif readPin('Up'):
+                if key == 'V_max':
+                    value = 3.3 if value == 5.0 else 5.0
+                elif key == 'Type':
+                    value = 'AC' if value == 'DC' else 'DC'
+                elif key == 'Status':
+                    value = 'Active' if value == 'Inactive' else 'Inactive'
+                elif key == 'Factor':
                     value += 1
-                    if value > 999:
-                        value = 0
-                    lcd.write_line("{0:>3}".format(value), 2, 8)
-                    is_timers_changed = True
-                    utime.sleep_ms(300)
-                while readPin('Down'):
-                    value -= 1
-                    if value < 0:
-                        value = 999
-                    is_timers_changed = True
-                    lcd.write_line("{0:>3}".format(value), 2, 8)
-                    utime.sleep_ms(300)
-            except StopIteration:
-                iterTimers = iter(Timers.items())
+                elif key == 'V0_ref':
+                    value += 0.001
+                    
+                is_value_modified = True
+            elif readPin('Down'):
+                if key == 'V_max':
+                    value = 3.3 if value == 5.0 else 5.0
+                elif key == 'Type':
+                    value = 'AC' if value == 'DC' else 'DC'
+                elif key == 'Status':
+                    value = 'Active' if value == 'Inactive' else 'Inactive'
+                elif key == 'Factor':
+                    value -= 1 if value >=1 else 0
+                elif key == 'V0_ref':
+                    value -= 0.001 if value >= 0.002 else 0
+                    
+                is_value_modified = True
+            
+            lcd.write_line_center(("{0:>6}{1}: " +format_str).format(key.upper(), blank_space, value),  2)
+            utime.sleep_ms(10)
+            
+        except StopIteration:
+            CurrentItems = iter(Current.items())
+        
 
-current_line = 1
-shift = 0
-menu = ["Minuterie", "Voltage", "Temperateur", "ChavTha", "Dan", "Manaras", "Harmonie"]
-#menu = ["Minuterie", "Voltage", "Temperateur"]
-total_lines = min(I2C_NUM_ROWS, len(menu))
+def Config_Temp():
+    """Configuration for temperature."""
+    global Temp, fdata
+    is_value_modified = False
+    
+    TempItems = iter(Temp.items())
+    
+    lcd.clear()
+    
+    while not stop_request:
+        try:
+            if readPin('Prog'):
+                if is_value_modified:
+                    Temp.update({key: value})
+                    fdata['Temp'] = Temp
+                    write_file(filename)
+                    load_file(filename)
+                    is_value_modified = False
+                
+                key, value = next(TempItems)
+                blank_space = ' ' if len(key) <= 3 else ''
+                
+                if key in ['Status', 'Type']:
+                    format_str = "{2:<8}"
+                elif key == 'Factor':
+                    format_str = "{2:<8}"
+                    lcd.write_line_center('xyz mV/Degre', 3)
+                elif key  == 'V_max':
+                    format_str = "{2:<8.1f}"
+                elif key == 'V0_ref':
+                    format_str = "{2:<8.2f}"
+                else:
+                    lcd.clear_line(3)
+                
+            elif readPin('Up'):
+                if key == 'V_max':
+                    value = 3.3 if value == 5.0 else 5.0
+                elif key == 'Status':
+                    value = 'Active' if value == 'Inactive' else 'Inactive'
+                elif key == 'Factor':
+                    value += 1
+                elif key == 'V0_ref':
+                    value += 0.01
+                    
+                is_value_modified = True
+            elif readPin('Down'):
+                if key == 'V_max':
+                    value = 3.3 if value == 5.0 else 5.0
+                elif key == 'Status':
+                    value = 'Active' if value == 'Inactive' else 'Inactive'
+                elif key == 'Factor':
+                    value -= 1 if value >= 1 else 0
+                elif key == 'V0_ref':
+                    value -= 0.01 if value >= 0.01 else 0
+                    
+                is_value_modified = True
+            
+            lcd.write_line_center(("{0:>6}{1}: " +format_str).format(key.upper(), blank_space, value),  2)
+            utime.sleep_ms(10)
+            
+        except StopIteration:
+            TempItems = iter(Temp.items())
+    
+def Chavtha():
+    lcd.clear()
+    lcd.write_line_center("ha ha ha", 1)
+    lcd.write_line_center("HA HA HA", 2)
+    
+def Dan():
+    lcd.clear()
+    lcd.write_line_center("Je veux 2 millions $".upper(), 2)
+    
+def Manaras():
+    lcd.clear()
+    lcd.write_line_center("Manaras", 2)
 
-def show_menu():
+def Harmonie():
+    lcd.clear()
+    lcd.write_line_center("Harmonie", 2)
+    
+menu_fct = [Config_Timers, Config_Current, Config_Temp, Chavtha, Dan, Manaras, Harmonie]
+
+def show_menu(menu_list, pos = 5):
     """Show menu on lcd"""
     
     line = 1
-    short_list = menu[shift:shift + total_lines]
-    
     lcd.clear()
-    for item in short_list:
-        if current_line == line:
+                
+    for item in menu_list:
+        if menu_current_line == line:
             lcd.write_line('>>', line, 2)
-        lcd.write_line(item.upper(), line, 5)
+        lcd.write_line(item.upper(), line, pos)
         line += 1
 
 def Configuration():
     
-    global in_prog_mode, current_line, shift, total_lines
+    global in_prog_mode, menu_current_line, menu_shift, menu_current_level
     
     hold_counter = 0
  
@@ -367,25 +531,30 @@ def Configuration():
             hold_counter = 0
         utime.sleep(1)
         
-    show_menu()
+    show_menu(menu[menu_shift:menu_shift + menu_total_lines])
+    
     while in_prog_mode and not stop_request:
         
         if readPin('Up') or readPin('Down'):
+            menu_current_level = 1
             if readPin('Up'):
-                if current_line < total_lines:
-                    current_line += 1
-                elif shift + total_lines < len(menu):
-                    shift += 1
+                if menu_current_line < menu_total_lines:
+                    menu_current_line += 1
+                elif menu_shift + menu_total_lines < len(menu):
+                    menu_shift += 1
             elif readPin('Down'):
-                if current_line > 1:
-                    current_line -= 1
-                elif shift > 0 :
-                    shift -= 1
+                if menu_current_line == 0:
+                    menu_current_line = 1
+                elif menu_current_line > 1:
+                    menu_current_line -= 1
+                elif menu_shift > 0 :
+                    menu_shift -= 1
+            show_menu(menu[menu_shift:menu_shift + menu_total_lines])
+            utime.sleep_ms(10)
+            
+        if readPin('Prog') and menu_current_level ==  1 :
+            menu_fct[menu_shift + menu_current_line-1]()
         
-            show_menu()
-        utime.sleep_ms(100)
-        
-
 def main():
     """Main program, call others functions"""
     #global state
@@ -397,6 +566,7 @@ def main():
         load_file(filename)
     except OSError:
         write_file(filename)
+        load_file(filename)
     
     initialize()
     
