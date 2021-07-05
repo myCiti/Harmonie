@@ -1,5 +1,5 @@
 ###########
-version = '0.7.5'
+version = '0.76'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -26,9 +26,9 @@ fdata = {
     },
     'Current'       :   {
         'Status'    : 'Active',
-        'Type'      : 'AC',
+        'N_lectures'      : 5,
         'V_max'     : 3.3,
-        'V0_ref'    : 1.525,
+        'V0_ref'    : 1.512,
         'Factor'    : 60
     },
     'Temp'          :   {
@@ -177,7 +177,7 @@ def writePin(pin, delay):
         
     # start reading current
     if Current['Status'] == 'Active':
-        current_timer.init(freq=3, mode=Timer.PERIODIC, callback=read_current)
+        current_timer.init(freq=2 , mode=Timer.PERIODIC, callback=read_current)
 
 def lcd_count_down(duration):
     """count down in second"""
@@ -225,26 +225,21 @@ def read_current(timer):
     global stop_request
     
     counter = 0
-    max_voltage = 0
     voltage = 0
-    reading_duration_ms = 30
-    ac_factor = sqrt(2) if Current['Type'] == 'AC' else 1
     
-    start_time = utime.ticks_ms()
-    while utime.ticks_diff(utime.ticks_ms(), start_time) < reading_duration_ms:
-        voltage = current_sensor.read_u16()
-        if max_voltage < voltage:
-            max_voltage = voltage
-        counter += 1
-        utime.sleep_us(30)
-        
-    amp = (max_voltage * Current['V_max']/65535 - Current['V0_ref']) * (1000/Current['Factor']) * ac_factor
-    lcd.write_line_center("I {0}: {1:>5.1f} A".format(Current['Type'], amp), 3)
+    for _ in range(Current['N_lectures']):
+        voltage += current_sensor.read_u16()
+        utime.sleep_us(10)
     
+    voltage = voltage / Current['N_lectures']
+    
+    amp = (voltage * Current['V_max']/65535  - Current['V0_ref']) * (1000/Current['Factor'])
+    #amp = (max_voltage * Current['V_max']/65535 - 0.0245 - Current['V0_ref']) 
+    lcd.write_line_center("I DC: {0:>5.1f} A".format(amp), 3) 
 
 def read_temp():
     """Read temperature"""
-    
+     
     voltage = (Temp['V_max']/65535) * temp_sensor.read_u16()
     temp = (voltage - Temp['V0_ref']) * (1000/Temp['Factor'])
     lcd.write_line_center('Temp: {0:>5.1f} '.format(temp) + chr(223) + 'C', 4)
@@ -377,12 +372,15 @@ def Config_Current():
                 key, value = next(CurrentItems)
                 blank_space = ' ' if len(key) <= 3 else ''
                 
-                if key in ['Status', 'Type']:
+                if key == 'Status':
                     format_str = "{2:<8}"
                     lcd.clear_line(3)
                 elif key == 'Factor':
                     format_str = "{2:<8}"
                     lcd.write_line_center('xyz mV/A', 3)
+                elif key == 'N_lectures':
+                    format_str = "{2:<8}"
+                    lcd.write_line_center('Nbre de lectures', 3)
                 elif key  in ['V_max', 'V0_ref']:
                     format_str = "{2:<8.3f}"
                     lcd.clear_line(3)
@@ -390,22 +388,18 @@ def Config_Current():
                     lcd.clear_line(3)
                 
             elif readPin('Up'):
-                if key == 'Type':
-                    value = 'AC' if value == 'DC' else 'DC'
-                elif key == 'Status':
+                if key == 'Status':
                     value = 'Active' if value == 'Inactive' else 'Inactive'
-                elif key == 'Factor':
+                elif key in ['Factor', 'N_lectures']:
                     value += 1
                 elif key in ['V_max', 'V0_ref']:
                     value += 0.001
                     
                 is_value_modified = True
             elif readPin('Down'):
-                if key == 'Type':
-                    value = 'AC' if value == 'DC' else 'DC'
-                elif key == 'Status':
+                if key == 'Status':
                     value = 'Active' if value == 'Inactive' else 'Inactive'
-                elif key == 'Factor':
+                elif key in ['Factor', 'N_lectures']:
                     value -= 1 if value >=1 else 0
                 elif key in ['V_max', 'V0_ref']:
                     value -= 0.001 if value >= 0.001 else 0

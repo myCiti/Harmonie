@@ -1,3 +1,5 @@
+## https://github.com/kevinmcaleer/rotarydisplay/blob/main/rotary_display.py
+
 from machine import Pin
 import utime
 

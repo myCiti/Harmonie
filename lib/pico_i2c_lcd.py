@@ -69,7 +69,7 @@ class I2cLcd(LcdApi):
         if cmd <= 3:
             # The home and clear commands require a worst case delay of 4.1 msec
             utime.sleep_ms(5)
-        gc.collect()
+        #gc.collect()
 
     def hal_write_data(self, data):
         # Write data to the LCD. Data is latched on the falling edge of E.
@@ -83,4 +83,4 @@ class I2cLcd(LcdApi):
                 ((data & 0x0f) << SHIFT_DATA))      
         self.i2c.writeto(self.i2c_addr, bytes([byte | MASK_E]))
         self.i2c.writeto(self.i2c_addr, bytes([byte]))
-        gc.collect()
+        #gc.collect()
