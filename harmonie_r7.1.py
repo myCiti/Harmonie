@@ -68,7 +68,8 @@ Output = dict((name, Pin(pin, Pin.OUT)) for (name, pin) in outPin.items())
 rotary_sw = Rotary(
     sw_pin = 9,     # select bouton, used to be Prog pin
     clk_pin = 7,    # signal A, used to be Up pin
-    dt_pin = 8      # signal B, used to be Down pin 
+    dt_pin = 8,      # signal B, used to be Down pin
+    half_step = False
     )
 
 Timers = {}
@@ -159,7 +160,7 @@ def initialize():
     utime.sleep(2)
     lcd.clear()
     lcd.write_line_center("Cls:{0:>3},Opn1:{1:>3}".format(Timers['Cls'], Timers['Opn1']), 1)
-    lcd.write_line_center("Mid:{0:>3},Opn2:{1:>3}".format(Timers['Mid'], Timers['Opn2']), 2)   
+    lcd.write_line_center("Mid:{0:>3},Opn2:{1:>3}".format(Timers['Mid'], Timers['Opn2']), 2)
     
 def readPin(pin, counter = counter_readPin, delay = delay_readPin):
     """Read pin a number of times to determine good signal, delay in msec"""
@@ -355,12 +356,18 @@ def Config_Timers():
                 first_select = False
             
             utime.sleep_ms(300)
+            start_time = utime.ticks_ms()
             while is_value_modified:
+                
                 sw_value = rotary_sw.value()
-                if sw_value == -1:         # turn clockwise
-                    value += 1 if value <= 999 else 999
-                elif sw_value == 1:
-                    value -= 1 if value >= 1 else 999
+                if sw_value == 1:         # turn clockwise
+                    value += 1
+                    if value > 999: value = 0
+                    print(value)
+                elif sw_value == -1:
+                    value -= 1
+                    if value < 0: value = 999
+                    print(value)
                 elif rotary_sw.select():
                     Timers.update({key: value})
                     config['Timers'] = Timers
@@ -373,8 +380,11 @@ def Config_Timers():
                     is_value_modified = not is_value_modified
                     utime.sleep_ms(300)
                 
-                lcd.write_line('{:<8}'.format(value), menu_key.current_line, 10)
-                utime.sleep_ms(10)
+                elapsed = utime.ticks_diff(utime.ticks_ms(), start_time)
+                if elapsed > 200:
+                    lcd.write_line('{:<3}'.format(value), menu_key.current_line, 10)
+                    start_time = utime.ticks_ms()
+                #utime.sleep_ms(1)
                 
             lcd.write_line('  {:<5}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
             
@@ -437,35 +447,41 @@ def Config_Current():
             else:
                 first_select = False
 
-            utime.sleep_ms(300)
-            while is_value_modified:
+            utime.sleep_ms(250)
+            value_format = ''
+            start_time = utime.ticks_ms()
+            while is_value_modified and not stop_request:
                 sw_value = rotary_sw.value()
-                if sw_value == -1:         # turn clockwise
+                if sw_value == 1:         # turn clockwise
                     if key in ['Statut']:
                         value = 'Active' if value == 'Inactiv' else 'Inactiv'
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<8}'
                     elif key in ['N_lect', 'Fcteur']:
                         value += 1
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<5}'
                     elif key in ['V_max']:
                         value += 0.1
-                        lcd.write_line('{:<8.1f}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<5.1f}'
                     elif key in ['V0_ref']:
                         value += 0.001
-                        lcd.write_line('{:<8.3f}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<6.3f}'
 
-                elif sw_value == 1:
+                elif sw_value == -1:
                     if key in ['Statut']:
                         value = 'Active' if value == 'Inactiv' else 'Inactiv'
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<8}'
                     elif key in ['N_lect', 'Fcteur']:
-                        value -= 1 if value > 1 else 1
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value -= 1
+                        if value < 0: value = 0
+                        value_format = '{:<5}'
                     elif key in ['V_max']:
-                        value -= 0.1 if value > 0.1 else 0
-                        lcd.write_line('{:<8.1f}'.format(value), menu_key.current_line, 11)
+                        value -= 0.1
+                        if value < 0: value = 0
+                        value_format = '{:<5.1f}'
                     elif key in ['V0_ref']:
-                        value -= 0.001 if value > 0.001 else 0
+                        value -= 0.001
+                        if value < 0: value = 0
+                        value_format = '{:<6.3f}'
                         lcd.write_line('{:<8.3f}'.format(value), menu_key.current_line, 11)
                     
                 elif rotary_sw.select():
@@ -479,8 +495,13 @@ def Config_Current():
                     menu_values.update([Current[k] for k in sorted(Current)])
                     is_value_modified = not is_value_modified
                     utime.sleep_ms(300)
+                
+                elapsed = utime.ticks_diff(utime.ticks_ms(), start_time)
+                if elapsed > 200:
+                    lcd.write_line(value_format.format(value), menu_key.current_line, 11)
+                    start_time = utime.ticks_ms()
+                #utime.sleep_ms(10)
                     
-                utime.sleep_ms(10)
             lcd.write_line('  {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                           
             
         elif sw_value == 1:
@@ -541,36 +562,41 @@ def Config_Temp():
             else:
                 first_select = False
 
-            utime.sleep_ms(300)
-            while is_value_modified:
+            utime.sleep_ms(250)
+            value_format = ''
+            start_time = utime.ticks_ms()
+            while is_value_modified and not stop_request:
                 sw_value = rotary_sw.value()
-                if sw_value == -1:         # turn clockwise
+                if sw_value == 1:         # turn clockwise
                     if key in ['Statut']:
                         value = 'Active' if value == 'Inactiv' else 'Inactiv'
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<8}'
                     elif key in ['Fcteur']:
                         value += 1
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<5}'
                     elif key in ['V_max']:
                         value += 0.1
-                        lcd.write_line('{:<8.1f}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<5.1f}'
                     elif key in ['V0_ref']:
                         value += 0.001
-                        lcd.write_line('{:<8.3f}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<6.3f}'
 
-                elif sw_value == 1:
+                elif sw_value == -1:
                     if key in ['Statut']:
                         value = 'Active' if value == 'Inactiv' else 'Inactiv'
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value_format = '{:<8}'
                     elif key in ['Fcteur']:
-                        value -= 1 if value > 1 else 1
-                        lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
+                        value -= 1
+                        if value <= 0: value = 0
+                        value_format = '{:<5}'
                     elif key in ['V_max']:
-                        value -= 0.1 if value > 0.1 else 0
-                        lcd.write_line('{:<8.1f}'.format(value), menu_key.current_line, 11)
+                        value -= 0.1
+                        if value <= 0.1: value = 0
+                        value_format = '{:<5.1f}'
                     elif key in ['V0_ref']:
-                        value -= 0.001 if value > 0.001 else 0
-                        lcd.write_line('{:<8.3f}'.format(value), menu_key.current_line, 11)
+                        value -= 0.001
+                        if value <= 0.001: value = 0
+                        value_format = '{:<6.3f}'
                     
                 elif rotary_sw.select():
                     Temp.update({key: value})
@@ -584,7 +610,11 @@ def Config_Temp():
                     is_value_modified = not is_value_modified
                     utime.sleep_ms(300)
                     
-                utime.sleep_ms(10)
+                elapsed = utime.ticks_diff(utime.ticks_ms(), start_time)
+                if elapsed > 200:
+                    lcd.write_line(value_format.format(value), menu_key.current_line, 11)
+                    start_time = utime.ticks_ms()
+          
             lcd.write_line('  {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                           
             
         elif sw_value == 1:
@@ -647,14 +677,20 @@ def Config_LCD():
                 first_select = False
                 
             utime.sleep_ms(300)   
-            while is_value_modified:
+            while is_value_modified and not stop_request:
                 sw_value = rotary_sw.value()
-                if sw_value == -1:         # turn clockwise
-                    value += 1 if value <= 999 else 999
-                elif sw_value == 1:
-                    value -= 1 if value >= 1 else 999
+                if sw_value == 1:         # turn clockwise
+                    if key == 'N_rows':
+                        value = 2 if value == 4 else 4
+                    elif key == 'N_cols':
+                        value = 16 if value == 20 else 20
+                elif sw_value == -1:
+                    if key == 'N_rows':
+                        value = 2 if value == 4 else 4
+                    elif key == 'N_cols':
+                        value = 16 if value == 20 else 20
                 elif rotary_sw.select():
-                    Timers.update({key: value})
+                    LCD.update({key: value})
                     config['LCD'] = LCD
                     write_file(filename)
                     load_file(filename)
@@ -665,8 +701,8 @@ def Config_LCD():
                     is_value_modified = not is_value_modified
                     utime.sleep_ms(300)
                 
-                lcd.write_line('{:<8}'.format(value), menu_key.current_line, 11)
-                utime.sleep_ms(10)
+                lcd.write_line('{:<3}'.format(value), menu_key.current_line, 11)
+                utime.sleep_ms(1)
                 
             lcd.write_line('  {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
             
@@ -754,7 +790,7 @@ def Configuration():
         elif rotary_sw.select() and in_prog_mode:
             menu_fct[menu.current_line + menu.shift - 1]()
             
-        utime.sleep_ms(20)
+        utime.sleep_ms(1)
             
         
 def main():
@@ -785,5 +821,5 @@ Input['Stop'].irq(trigger=Pin.IRQ_RISING, handler=stop_signal_handler)
 
 if __name__ == '__main__':
     main()
-    #change_timers()
+
        
