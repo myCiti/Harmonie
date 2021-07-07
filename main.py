@@ -53,6 +53,8 @@ inPin = {
     "Stop"     : 6,
     "OpenLmt"  : 3,
     "CloseLmt" : 2,
+    "Up"       : 7,
+    "Down"     : 8
     }
 
 outPin = {
@@ -102,13 +104,15 @@ LCD = {}
 
 def load_file(file):
     """Load json file configuration."""
-    global Timers, Current, Temp, LCD
+    global Timers, Current, Temp, LCD, config
     with open(file, 'r') as infile:
         data = ujson.load(infile)
+        config = data
         Timers = data['Timers']
         Current = data['Current']
         Temp = data['Temp']
         LCD = data['LCD']
+    
 
 def write_file(file):
     """write config to file"""
@@ -363,11 +367,9 @@ def Config_Timers():
                 if sw_value == 1:         # turn clockwise
                     value += 1
                     if value > 999: value = 0
-                    print(value)
                 elif sw_value == -1:
                     value -= 1
                     if value < 0: value = 999
-                    print(value)
                 elif rotary_sw.select():
                     Timers.update({key: value})
                     config['Timers'] = Timers
@@ -601,8 +603,10 @@ def Config_Temp():
                 elif rotary_sw.select():
                     Temp.update({key: value})
                     config['Temp'] = Temp
+                    print(config)
                     write_file(filename)
                     load_file(filename)
+                    print(config)
                     
                     ## update menuitems
                     menu_key.update(sorted(Temp))
