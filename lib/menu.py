@@ -10,6 +10,10 @@ class Menu:
     def show(self):
         return self.items[self.shift : self.shift + self.total_lines]
     
+    def update(self, menu_list):
+        self.items = menu_list
+        self.show()
+    
     def next(self):                                     
         if self.current_line < self.total_lines:
             self.current_line += 1

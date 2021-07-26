@@ -345,8 +345,12 @@ def Config_Timers():
             lcd.clear()
             line = 1
             for k, v in zip(menu_key.show(), menu_values.show()):
-                lcd.write_line('{:<5}: {:<8}'.format(k.upper(), v), line, 3)
+                if line == menu_key.current_line:
+                    lcd.write_line('>> {:<5}: {:<8}'.format(k.upper(), v), line, 1)
+                else:
+                    lcd.write_line('{:<5}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
+
             first_time = False
             
         elif rotary_sw.select():
@@ -391,7 +395,7 @@ def Config_Timers():
                     start_time = utime.ticks_ms()
                 utime.sleep_ms(delay_ms)
                 
-            lcd.write_line('  {:<5}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
+            lcd.write_line('>> {:<5}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
             
         elif sw_value == 1 or readPin('Up'):
             if readPin('Up'): delay_ms = 200
@@ -439,7 +443,10 @@ def Config_Current():
             lcd.clear()
             line = 1
             for k, v in zip(menu_key.show(), menu_values.show()):
-                lcd.write_line('{:<6}: {:<8}'.format(k.upper(), v), line, 3)
+                if line == menu_key.current_line:
+                    lcd.write_line('>> {:<5}: {:<8}'.format(k.upper(), v), line, 1)
+                else:
+                    lcd.write_line('{:<5}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
             first_time = False
             
@@ -513,7 +520,7 @@ def Config_Current():
                     start_time = utime.ticks_ms()
                 utime.sleep_ms(delay_ms)
                     
-            lcd.write_line('  {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                           
+            lcd.write_line('>> {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                           
             
         elif sw_value == 1 or readPin('Up'):
             if readPin('Up'): delay_ms = 200
@@ -561,7 +568,10 @@ def Config_Temp():
             lcd.clear()
             line = 1
             for k, v in zip(menu_key.show(), menu_values.show()):
-                lcd.write_line('{:<6}: {:<8}'.format(k.upper(), v), line, 3)
+                if line == menu_key.current_line:
+                    lcd.write_line('>> {:<5}: {:<8}'.format(k.upper(), v), line, 1)
+                else:
+                    lcd.write_line('{:<5}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
             first_time = False
             
@@ -634,7 +644,7 @@ def Config_Temp():
                     start_time = utime.ticks_ms()
                 utime.sleep_ms(delay_ms)
           
-            lcd.write_line('  {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                           
+            lcd.write_line('>> {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                           
             
         elif sw_value == 1 or readPin('Up'):
             if readPin('Up'): delay_ms = 200
@@ -682,7 +692,10 @@ def Config_LCD():
             lcd.clear()
             line = 1
             for k, v in zip(menu_key.show(), menu_values.show()):
-                lcd.write_line('{:<6}: {:<8}'.format(k.upper(), v), line, 3)
+                if line == menu_key.current_line:
+                    lcd.write_line('>> {:<5}: {:<8}'.format(k.upper(), v), line, 1)
+                else:
+                    lcd.write_line('{:<5}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
             first_time = False
             
@@ -729,7 +742,7 @@ def Config_LCD():
                 lcd.write_line('{:<3}'.format(value), menu_key.current_line, 11)
                 utime.sleep_ms(delay_ms)
                 
-            lcd.write_line('  {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
+            lcd.write_line('>> {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
             
         elif sw_value == 1 or readPin('Up'):
             if readPin('Up'): delay_ms = 200
@@ -783,7 +796,6 @@ def Configuration():
     stop_request = False
     first_time = True
     
-    
     while not stop_request:
         sw_value = rotary_sw.value()
         delay_ms = 1
@@ -791,14 +803,17 @@ def Configuration():
             line = 1
             lcd.clear()
             for item in menu.show():
-                lcd.write_line(item.upper(), line, 4)
+                if line == menu.current_line:
+                    lcd.write_line('>> ' + item.upper(), line, 1)
+                else:
+                    lcd.write_line(item.upper(), line, 5)
                 line += 1
             first_time = False
+            utime.sleep_ms(500)
             
         elif sw_value == 1 or readPin('Up'):    # turn clockwise
             delay_ms = 1 if sw_value == 1 else 200
             line = 1
-            in_prog_mode = True
             lcd.clear()
             for item in menu.next():
                 if line == menu.current_line:
@@ -809,7 +824,6 @@ def Configuration():
         elif sw_value == -1 or readPin('Down'):    # turn counter-clockwise
             delay_ms = 1 if sw_value == 1 else 200
             line = 1
-            in_prog_mode = True
             lcd.clear()
             for item in menu.previous():
                 if line == menu.current_line:
@@ -818,7 +832,7 @@ def Configuration():
                     lcd.write_line(item.upper(), line, 5)
                 line += 1
                 
-        elif rotary_sw.select() and in_prog_mode:
+        elif rotary_sw.select():
             menu_fct[menu.current_line + menu.shift - 1]()
             
         utime.sleep_ms(delay_ms)
