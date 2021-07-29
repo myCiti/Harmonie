@@ -227,20 +227,16 @@ def lcd_count_down(duration):
 def stop_signal_handler(pin):
     """Send stop_request when activate"""
     
-    read_count = 0
     global stop_request
     current_timer.deinit()
-    
-    for i in range(counter_readPin):
-        if Input['Stop'].value:
-            read_count += 1
-        utime.sleep_ms(delay_readPin)
-        
-    if read_count == counter_readPin: 
+
+    while Input['Stop'].value():
         stop_request = True
         Output['Stop'].value(1)
-        utime.sleep_ms(press_duration)
-        Output['Stop'].value(0)
+        utime.sleep_ms(10)
+        
+    Output['Stop'].value(0)
+    
 
 def read_current(timer):
     """Read current in amp"""
