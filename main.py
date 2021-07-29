@@ -1,5 +1,5 @@
 ###########
-version = '7.1'
+version = '7.2'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -85,7 +85,8 @@ temp_sensor = ADC(2)      # read temperature at ADC(1)
 machine.freq(133000000)   # set cpu frequency
 
 current_timer = Timer()
-temp_timer = Timer()
+#temp_timer = Timer()
+stopled_timer = Timer()
 
 ### some global variables
 state = 0
@@ -156,6 +157,7 @@ def initialize():
     Timers['Opn2'] = 0 if Timers['Mid'] == 0 else Timers['Opn2']
     
     current_timer.deinit()
+    stopled_timer.deinit()
     #temp_timer.deinit()
     
     lcd.clear()
@@ -232,7 +234,7 @@ def stop_signal_handler(pin):
     current_timer.deinit()
     
     for i in range(counter_readPin):
-        if Input['Stop'].value:
+        if Input['Stop'].value():
             read_count += 1
         utime.sleep_ms(delay_readPin)
         
@@ -240,7 +242,7 @@ def stop_signal_handler(pin):
         stop_request = True
         Output['Stop'].value(1)
         utime.sleep_ms(press_duration)
-        Output['Stop'].value(0)
+        #Output['Stop'].value(0)
 
 def read_current(timer):
     """Read current in amp"""
@@ -275,7 +277,7 @@ def Logic_loop():
     
     is_running = True
     
-    while not stop_request:
+    while not (stop_request or Input['Stop'].value()):
         
         if state == 0:              # initial state
             if readPin('Close'):
@@ -836,7 +838,14 @@ def Configuration():
             menu_fct[menu.current_line + menu.shift - 1]()
             
         utime.sleep_ms(delay_ms)
-            
+
+def show_stopled(timer):
+    """Turn on stop led when stop button pressed."""
+    
+    if Input['Stop'].value():
+        Output['Stop'].value(1)
+    else:
+        Output['Stop'].value(0)
         
 def main():
     """Main program, call others functions"""
@@ -847,11 +856,12 @@ def main():
     
     initialize()
     
+    stopled_timer.init(freq=10, mode=Timer.PERIODIC, callback=show_stopled)
     #_thread.start_new_thread(stop_signal_handler, ())
     
     while True:
         if not is_running:
-            if readPin('Close') or readPin('Open'):
+            if (readPin('Close') or readPin('Open')) and not Input['Stop'].value():
                 Logic_loop()
             elif rotary_sw.select():
                 Configuration()
