@@ -43,7 +43,7 @@ config = {
     'Parametres'    :  {
         'LCD_li'    : 4,
         'LCD_co'    : 20,
-        'btn_dura'    : 300,
+        'btn_dura'    : 100,
         'btn_lect'    : 2
     }
 }
@@ -130,8 +130,6 @@ i2c = I2C(0, sda=Pin(0), scl=Pin(1), freq=400000)
 lcd = I2cLcd(i2c, I2C_ADDR, I2C_NUM_ROWS, I2C_NUM_COLS)
 
 prog_mode_delay = 2                         # delay for press and hold before entre prog mode
-press_duration = Parametres['btn_dura']       # in ms, simulate duration of presssing a button
-counter_readPin = Parametres['btn_lect']      # How many times pins are read to determine good signal
 delay_readPin = 1        # delay between each iteration to read pin
 
 def initialize():
@@ -169,7 +167,7 @@ def initialize():
     lcd.write_line_center("Cls:{0:>3},Opn1:{1:>3}".format(Timers['Cls'], Timers['Opn1']), 1)
     lcd.write_line_center("Mid:{0:>3},Opn2:{1:>3}".format(Timers['Mid'], Timers['Opn2']), 2)
     
-def readPin(pin, counter = counter_readPin, delay = delay_readPin):
+def readPin(pin, counter = Parametres['btn_lect'] , delay = delay_readPin):
     """Read pin a number of times to determine good signal, delay in msec"""
     read_count = 0
     
@@ -246,15 +244,17 @@ def stop_signal_handler(pin):
     
     stopled_timer.init(freq=10, mode=Timer.PERIODIC, callback=stopled_off)
     
-    for i in range(counter_readPin):
+    for i in range(Parametres['btn_lect'] ):
         if Input['Stop'].value():
             read_count += 1
         utime.sleep_ms(delay_readPin)
         
-    if (read_count == counter_readPin) and stop_token_first == False: 
+    if (read_count == Parametres['btn_lect'] ) and stop_token_first == False: 
         stop_token_first = True
         stop_request = True
         Output['Stop'].value(1)
+    
+    utime.sleep_ms(Parametres['btn_dura'])
 
 def read_current(timer):
     """Read current in amp"""
@@ -293,10 +293,10 @@ def Logic_loop():
         
         if state == 0:              # initial state
             if readPin('Close'):
-                writePin('Close', press_duration)
+                writePin('Close', Parametres['btn_dura'])
                 state = 1
             elif readPin('Open'):
-                writePin('Open', press_duration)
+                writePin('Open', Parametres['btn_dura'])
                 state = 2
         elif state == 1:            # door fully closed, close limit triggers
             if readPin('CloseLmt'):
@@ -309,7 +309,7 @@ def Logic_loop():
                     read_temp()    # read and show temperature
                     
                 lcd_count_down(Timers['Cls'])
-                writePin('Open', press_duration)
+                writePin('Open', Parametres['btn_dura'])
                 state = 2
                 gc.collect()        # force gc collection
                 #print(gc.mem_free())
@@ -320,7 +320,7 @@ def Logic_loop():
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn1'])
-                writePin('Close', press_duration)
+                writePin('Close', Parametres['btn_dura'])
                 state = 1 if Timers['Mid'] == 0 else 3
         elif state == 3:             # mi-stop
             current_timer.deinit()
@@ -328,7 +328,7 @@ def Logic_loop():
             lcd.clear_line(3)
             lcd.write_line_center("MI-ARRET", 1)
             lcd_count_down(Timers['Mid'])
-            writePin('Open', press_duration)
+            writePin('Open', Parametres['btn_dura'])
             state = 4
         elif state == 4:              # door fully opened, after mid-stop
             if readPin('OpenLmt'):
@@ -337,7 +337,7 @@ def Logic_loop():
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn2'])
-                writePin('Close', press_duration)
+                writePin('Close', Parametres['btn_dura'])
                 state = 1
         else:
             print("ERREUR")
