@@ -1,5 +1,5 @@
 ###########
-version = '7.1'
+version = '7.2'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -40,9 +40,11 @@ config = {
         'V0_ref'    : 0.5,
         'Fcteur'    : 10
     },
-    'LCD'           :  {
-        'N_rows'    : 4,
-        'N_cols'    : 20
+    'Parametres'    :  {
+        'LCD_li'    : 4,
+        'LCD_co'    : 20,
+        'btn_dura'    : 100,
+        'btn_lect'    : 2
     }
 }
 
@@ -77,7 +79,7 @@ rotary_sw = Rotary(
 Timers = {}
 Current = {}
 Temp = {}
-LCD = {}
+Parametres = {}
 
 
 current_sensor = ADC(1)    # read curent at ADC(0)
@@ -85,33 +87,27 @@ temp_sensor = ADC(2)      # read temperature at ADC(1)
 machine.freq(133000000)   # set cpu frequency
 
 current_timer = Timer()
-temp_timer = Timer()
+#temp_timer = Timer()
+stopled_timer = Timer()
 
 ### some global variables
 state = 0
 stop_request = False
+stop_token_first = False  # used to turn off stop_request signal
 is_running = False
 in_prog_mode = False
-prog_mode_delay = 2      # delay for press and hold before entre prog mode
-press_duration = 300     # in ms, simulate duration of presssing a button
-counter_readPin = 1      # How many times pins are read to determine good signal
-delay_readPin = 1        # delay between each iteration to read pin
 
-Timers = {}
-Current = {}
-Temp = {}
-LCD = {}
 
 def load_file(file):
     """Load json file configuration."""
-    global Timers, Current, Temp, LCD, config
+    global Timers, Current, Temp, Parametres, config
     with open(file, 'r') as infile:
         data = ujson.load(infile)
         config = data
         Timers = data['Timers']
         Current = data['Current']
         Temp = data['Temp']
-        LCD = data['LCD']
+        Parametres = data['Parametres']
     
 
 def write_file(file):
@@ -128,15 +124,19 @@ except OSError:
 
 ### LCD config
 I2C_ADDR     = 0x27
-I2C_NUM_ROWS = LCD['N_rows']
-I2C_NUM_COLS = LCD['N_cols']
+I2C_NUM_ROWS = Parametres['LCD_li']
+I2C_NUM_COLS = Parametres['LCD_co']
 i2c = I2C(0, sda=Pin(0), scl=Pin(1), freq=400000)
 lcd = I2cLcd(i2c, I2C_ADDR, I2C_NUM_ROWS, I2C_NUM_COLS)
+
+prog_mode_delay = 2                         # delay for press and hold before entre prog mode
+delay_readPin = 1        # delay between each iteration to read pin
 
 def initialize():
     """initialization before each run"""
     global state
     global stop_request
+    global stop_token_first
     global is_running
     global in_prog_mode
     global menu_current_line, menu_shift, menu_current_level
@@ -148,7 +148,8 @@ def initialize():
     in_prog_mode = False
     
     for p in Output:
-        Output[p].value(0)
+        if p != 'Stop':
+            Output[p].value(0)
         
     for p in Input:
         Input[p]        
@@ -166,7 +167,7 @@ def initialize():
     lcd.write_line_center("Cls:{0:>3},Opn1:{1:>3}".format(Timers['Cls'], Timers['Opn1']), 1)
     lcd.write_line_center("Mid:{0:>3},Opn2:{1:>3}".format(Timers['Mid'], Timers['Opn2']), 2)
     
-def readPin(pin, counter = counter_readPin, delay = delay_readPin):
+def readPin(pin, counter = Parametres['btn_lect'] , delay = delay_readPin):
     """Read pin a number of times to determine good signal, delay in msec"""
     read_count = 0
     
@@ -222,25 +223,38 @@ def lcd_count_down(duration):
         elif state == 3 and Input['CloseLmt'].value():
             break
         utime.sleep(1)
+
+
+def stopled_off(timer):
+    """Turn off stop led and signal when stop button is declicked."""
     
+    global stop_request, stop_token_first
     
+    if Input['Stop'].value() == 0 and stop_token_first:
+        Output['Stop'].value(0)
+        stop_token_first = False
+        stopled_timer.deinit()
+
 def stop_signal_handler(pin):
     """Send stop_request when activate"""
     
     read_count = 0
-    global stop_request
+    global stop_token_first, stop_request
     current_timer.deinit()
     
-    for i in range(counter_readPin):
-        if Input['Stop'].value:
+    stopled_timer.init(freq=10, mode=Timer.PERIODIC, callback=stopled_off)
+    
+    for i in range(Parametres['btn_lect'] ):
+        if Input['Stop'].value():
             read_count += 1
         utime.sleep_ms(delay_readPin)
         
-    if read_count == counter_readPin: 
+    if (read_count == Parametres['btn_lect'] ) and stop_token_first == False: 
+        stop_token_first = True
         stop_request = True
         Output['Stop'].value(1)
-        utime.sleep_ms(press_duration)
-        Output['Stop'].value(0)
+    
+    utime.sleep_ms(Parametres['btn_dura'])
 
 def read_current(timer):
     """Read current in amp"""
@@ -279,10 +293,10 @@ def Logic_loop():
         
         if state == 0:              # initial state
             if readPin('Close'):
-                writePin('Close', press_duration)
+                writePin('Close', Parametres['btn_dura'])
                 state = 1
             elif readPin('Open'):
-                writePin('Open', press_duration)
+                writePin('Open', Parametres['btn_dura'])
                 state = 2
         elif state == 1:            # door fully closed, close limit triggers
             if readPin('CloseLmt'):
@@ -295,7 +309,7 @@ def Logic_loop():
                     read_temp()    # read and show temperature
                     
                 lcd_count_down(Timers['Cls'])
-                writePin('Open', press_duration)
+                writePin('Open', Parametres['btn_dura'])
                 state = 2
                 gc.collect()        # force gc collection
                 #print(gc.mem_free())
@@ -306,7 +320,7 @@ def Logic_loop():
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn1'])
-                writePin('Close', press_duration)
+                writePin('Close', Parametres['btn_dura'])
                 state = 1 if Timers['Mid'] == 0 else 3
         elif state == 3:             # mi-stop
             current_timer.deinit()
@@ -314,7 +328,7 @@ def Logic_loop():
             lcd.clear_line(3)
             lcd.write_line_center("MI-ARRET", 1)
             lcd_count_down(Timers['Mid'])
-            writePin('Open', press_duration)
+            writePin('Open', Parametres['btn_dura'])
             state = 4
         elif state == 4:              # door fully opened, after mid-stop
             if readPin('OpenLmt'):
@@ -323,7 +337,7 @@ def Logic_loop():
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn2'])
-                writePin('Close', press_duration)
+                writePin('Close', Parametres['btn_dura'])
                 state = 1
         else:
             print("ERREUR")
@@ -675,13 +689,13 @@ def Config_Temp():
     Configuration()
 
     
-def Config_LCD():
+def Config_Parametres():
     """"Configuration for LCD"""
-    global LCD, config
+    global Parametres, config
     is_value_modified = False
     
-    menu_key = Menu(sorted(LCD), I2C_NUM_ROWS)
-    menu_values = Menu([LCD[k] for k in sorted(LCD)], I2C_NUM_ROWS)
+    menu_key = Menu(sorted(Parametres), I2C_NUM_ROWS)
+    menu_values = Menu([Parametres[k] for k in sorted(Parametres)], I2C_NUM_ROWS)
     
     first_time = True
     first_select = True
@@ -693,9 +707,9 @@ def Config_LCD():
             line = 1
             for k, v in zip(menu_key.show(), menu_values.show()):
                 if line == menu_key.current_line:
-                    lcd.write_line('>> {:<5}: {:<8}'.format(k.upper(), v), line, 1)
+                    lcd.write_line('>> {:<8}: {:<5}'.format(k.upper(), v), line, 1)
                 else:
-                    lcd.write_line('{:<5}: {:<8}'.format(k.upper(), v), line, 3)
+                    lcd.write_line('{:<8}: {:<5}'.format(k.upper(), v), line, 3)
                 line += 1
             first_time = False
             
@@ -707,42 +721,52 @@ def Config_LCD():
             
             if not first_select:
                 is_value_modified = not is_value_modified
-                lcd.write_line('{:<6}:>> {:<8}'.format(key.upper(), value), menu_key.current_line, 1)
+                lcd.write_line('{:<8}:>> {:<5}'.format(key.upper(), value), menu_key.current_line, 1)
             else:
                 first_select = False
                 
-            utime.sleep_ms(300)   
+            utime.sleep_ms(250)
+            value_format = '{:<5}'
+            start_time = utime.ticks_ms()
             while is_value_modified and not stop_request:
                 sw_value = rotary_sw.value()
                 delay_ms = 1
                 if sw_value == 1 or readPin('Up'):         # turn clockwise
                     if readPin('Up'): delay_ms = 200
-                    if key == 'N_rows':
+                    if key == 'LCD_li':
                         value = 2 if value == 4 else 4
-                    elif key == 'N_cols':
+                    elif key == 'LCD_co':
                         value = 16 if value == 20 else 20
+                    else:
+                        value += 1
                 elif sw_value == -1 or readPin('Down'):
                     if readPin('Down'): delay_ms = 200
-                    if key == 'N_rows':
+                    if key == 'LCD_li':
                         value = 2 if value == 4 else 4
-                    elif key == 'N_cols':
+                    elif key == 'LCD_co':
                         value = 16 if value == 20 else 20
+                    else:
+                        value -= 1
+                        if value <= 1: value = 0
                 elif rotary_sw.select():
-                    LCD.update({key: value})
-                    config['LCD'] = LCD
+                    Parametres.update({key: value})
+                    config['Parametres'] = Parametres
                     write_file(filename)
                     load_file(filename)
                     
                     ## update menuitems
-                    menu_key.update(sorted(LCD))
-                    menu_values.update([ LCD[k] for k in sorted(LCD) ])
+                    menu_key.update(sorted(Parametres))
+                    menu_values.update([ Parametres[k] for k in sorted(Parametres) ])
                     is_value_modified = not is_value_modified
                     utime.sleep_ms(300)
                 
-                lcd.write_line('{:<3}'.format(value), menu_key.current_line, 11)
+                elapsed = utime.ticks_diff(utime.ticks_ms(), start_time)
+                if elapsed > 200:
+                    lcd.write_line(value_format.format(value), menu_key.current_line, 13)
+                    start_time = utime.ticks_ms()
                 utime.sleep_ms(delay_ms)
                 
-            lcd.write_line('>> {:<6}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
+            lcd.write_line('>> {:<8}: {:<5}'.format(key.upper(), value), menu_key.current_line, 1)                                   
             
         elif sw_value == 1 or readPin('Up'):
             if readPin('Up'): delay_ms = 200
@@ -750,9 +774,9 @@ def Config_LCD():
             line = 1
             for k, v in zip(menu_key.next(), menu_values.next()):
                 if line == menu_key.current_line:
-                    lcd.write_line('>> {:<6}: {:<8}'.format(k.upper(), v), line, 1)
+                    lcd.write_line('>> {:<8}: {:<5}'.format(k.upper(), v), line, 1)
                 else:
-                    lcd.write_line('{:<6}: {:<8}'.format(k.upper(), v), line, 3)
+                    lcd.write_line('{:<8}: {:<5}'.format(k.upper(), v), line, 3)
                 line += 1
         elif sw_value == -1 or readPin('Down'):
             if readPin('Down'): delay_ms = 200
@@ -762,9 +786,9 @@ def Config_LCD():
                 if is_value_modified:
                     v =- 1
                 if line == menu_key.current_line:
-                    lcd.write_line('>> {:<6}: {:<8}'.format(k.upper(), v), line, 1)
+                    lcd.write_line('>> {:<8}: {:<5}'.format(k.upper(), v), line, 1)
                 else:
-                    lcd.write_line('{:<6}: {:<8}'.format(k.upper(), v), line, 3)
+                    lcd.write_line('{:<8}: {:<5}'.format(k.upper(), v), line, 3)
                 line += 1
         
         utime.sleep_ms(delay_ms)
@@ -772,21 +796,10 @@ def Config_LCD():
     # go back to Configuration menu
     Configuration()
     
-def Dan():
-    lcd.clear()
-    lcd.write_line_center("Je veux 2 millions $".upper(), 2)
-    
-def Chavtha():
-    lcd.clear()
-    lcd.write_line_center("HA HA HA ", 2)
-
-def Harmonie():
-    lcd.clear()
-    lcd.write_line_center("Harmonie", 2)
     
 ### menu
-menu = Menu(["Minuterie", "Courant", "Temperature", "LCD", "Chavtha", "Dan"], I2C_NUM_ROWS)
-menu_fct = [Config_Timers, Config_Current, Config_Temp, Config_LCD, Chavtha, Dan]
+menu = Menu(["Minuterie", "Courant", "Temperature", "Parametres"], I2C_NUM_ROWS)
+menu_fct = [Config_Timers, Config_Current, Config_Temp, Config_Parametres,]
 
 
 def Configuration():
@@ -836,7 +849,7 @@ def Configuration():
             menu_fct[menu.current_line + menu.shift - 1]()
             
         utime.sleep_ms(delay_ms)
-            
+
         
 def main():
     """Main program, call others functions"""
@@ -851,9 +864,9 @@ def main():
     
     while True:
         if not is_running:
-            if readPin('Close') or readPin('Open'):
+            if (readPin('Close') or readPin('Open')) and not stop_token_first:
                 Logic_loop()
-            elif rotary_sw.select():
+            elif rotary_sw.select() and not stop_token_first:
                 Configuration()
         if stop_request:
             initialize()
