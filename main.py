@@ -1,5 +1,5 @@
 ###########
-version = '7.2'
+version = '7.3'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -43,8 +43,9 @@ config = {
     'Parametres'    :  {
         'LCD_li'    : 4,
         'LCD_co'    : 20,
+        'Compteur'  : 'ClsLmt',
         'btn_dura'    : 100,
-        'btn_lect'    : 2
+        'btn_lect'    : 2,
     }
 }
 
@@ -63,7 +64,7 @@ outPin = {
     "Open"     : 10,
     "Close"    : 11,
     "Stop"     : 12,
-    "Spare"    : 13
+    "Counter"    : 13
     }
    
 Input = dict((name, Pin(pin, Pin.IN, Pin.PULL_DOWN)) for (name, pin) in inPin.items())
@@ -186,11 +187,15 @@ def writePin(pin, delay):
     
     if not stop_request:
         if pin == 'Open' and Input['OpenLmt'].value() != 1:
+            if Parametres['Compteur'] == 'OpnLmt':
+                Output['Counter'].value(1)
             Output[pin].value(1)
             lcd.clear_line(1)
             lcd.clear_line(2)
             lcd.write_line_center("EN OUVERTURE ", 1)
         elif pin == 'Close' and Input['CloseLmt'].value() != 1:
+            if Parametres['Compteur'] == 'ClsLmt':
+                Output['Counter'].value(1)
             Output[pin].value(1)
             lcd.clear_line(1)
             lcd.clear_line(2)
@@ -198,6 +203,7 @@ def writePin(pin, delay):
         
         utime.sleep_ms(delay)
         Output[pin].value(0)
+        Output['Counter'].value(0)
         
     # start reading current
     if Current['Statut'] == 'Active':
@@ -707,9 +713,9 @@ def Config_Parametres():
             line = 1
             for k, v in zip(menu_key.show(), menu_values.show()):
                 if line == menu_key.current_line:
-                    lcd.write_line('>> {:<8}: {:<5}'.format(k.upper(), v), line, 1)
+                    lcd.write_line('>> {:<8}: {:<8}'.format(k.upper(), v), line, 1)
                 else:
-                    lcd.write_line('{:<8}: {:<5}'.format(k.upper(), v), line, 3)
+                    lcd.write_line('{:<8}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
             first_time = False
             
@@ -721,12 +727,12 @@ def Config_Parametres():
             
             if not first_select:
                 is_value_modified = not is_value_modified
-                lcd.write_line('{:<8}:>> {:<5}'.format(key.upper(), value), menu_key.current_line, 1)
+                lcd.write_line('{:<8}:>> {:<8}'.format(key.upper(), value), menu_key.current_line, 1)
             else:
                 first_select = False
                 
             utime.sleep_ms(250)
-            value_format = '{:<5}'
+            value_format = '{:<8}'
             start_time = utime.ticks_ms()
             while is_value_modified and not stop_request:
                 sw_value = rotary_sw.value()
@@ -737,6 +743,14 @@ def Config_Parametres():
                         value = 2 if value == 4 else 4
                     elif key == 'LCD_co':
                         value = 16 if value == 20 else 20
+                    elif key == 'Compteur':
+                        if value == 'OpnLmt':
+                            value = 'ClsLmt'
+                        elif value == 'ClsLmt':
+                            value = 'Inactiv'
+                        else:
+                            value = 'OpnLmt'
+                            
                     else:
                         value += 1
                 elif sw_value == -1 or readPin('Down'):
@@ -745,6 +759,14 @@ def Config_Parametres():
                         value = 2 if value == 4 else 4
                     elif key == 'LCD_co':
                         value = 16 if value == 20 else 20
+                    elif key == 'Compteur':
+                        if value == 'OpnLmt':
+                            value = 'ClsLmt'
+                        elif value == 'ClsLmt':
+                            value = 'Inactiv'
+                        else:
+                            value = 'OpnLmt'
+                            
                     else:
                         value -= 1
                         if value <= 1: value = 0
@@ -766,7 +788,7 @@ def Config_Parametres():
                     start_time = utime.ticks_ms()
                 utime.sleep_ms(delay_ms)
                 
-            lcd.write_line('>> {:<8}: {:<5}'.format(key.upper(), value), menu_key.current_line, 1)                                   
+            lcd.write_line('>> {:<8}: {:<8}'.format(key.upper(), value), menu_key.current_line, 1)                                   
             
         elif sw_value == 1 or readPin('Up'):
             if readPin('Up'): delay_ms = 200
@@ -774,9 +796,9 @@ def Config_Parametres():
             line = 1
             for k, v in zip(menu_key.next(), menu_values.next()):
                 if line == menu_key.current_line:
-                    lcd.write_line('>> {:<8}: {:<5}'.format(k.upper(), v), line, 1)
+                    lcd.write_line('>> {:<8}: {:<8}'.format(k.upper(), v), line, 1)
                 else:
-                    lcd.write_line('{:<8}: {:<5}'.format(k.upper(), v), line, 3)
+                    lcd.write_line('{:<8}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
         elif sw_value == -1 or readPin('Down'):
             if readPin('Down'): delay_ms = 200
@@ -786,9 +808,9 @@ def Config_Parametres():
                 if is_value_modified:
                     v =- 1
                 if line == menu_key.current_line:
-                    lcd.write_line('>> {:<8}: {:<5}'.format(k.upper(), v), line, 1)
+                    lcd.write_line('>> {:<8}: {:<8}'.format(k.upper(), v), line, 1)
                 else:
-                    lcd.write_line('{:<8}: {:<5}'.format(k.upper(), v), line, 3)
+                    lcd.write_line('{:<8}: {:<8}'.format(k.upper(), v), line, 3)
                 line += 1
         
         utime.sleep_ms(delay_ms)
@@ -799,7 +821,7 @@ def Config_Parametres():
     
 ### menu
 menu = Menu(["Minuterie", "Courant", "Temperature", "Parametres"], I2C_NUM_ROWS)
-menu_fct = [Config_Timers, Config_Current, Config_Temp, Config_Parametres,]
+menu_fct = [Config_Timers, Config_Current, Config_Temp, Config_Parametres]
 
 
 def Configuration():
