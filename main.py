@@ -1,5 +1,5 @@
 ###########
-version = '7.3'
+version = '7.4'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -22,10 +22,10 @@ from math import sqrt
 filename = 'harmonie_config.json'
 config = {
     'Timers'        :   {
-        'Opn1'      : 5,
-        'Cls'       : 5,
-        'Mid'       : 6,
-        'Opn2'      : 8
+        'Opn1'      : 3,
+        'Cls'       : 2,
+        'Mid'       : 4,
+        'Opn2'      : 2
     },
     'Current'       :   {
         'Statut'    : 'Active',
@@ -46,6 +46,8 @@ config = {
         'Compteur'  : 'ClsLmt',
         'btn_dura'    : 100,
         'btn_lect'    : 2,
+        'MidStop'     : 2,
+        'StopOut'     :  'N.CLS'    # N.CLS = Normally close, N.OPN = Normally open
     }
 }
 
@@ -97,6 +99,7 @@ stop_request = False
 stop_token_first = False  # used to turn off stop_request signal
 is_running = False
 in_prog_mode = False
+very_first_run = True
 
 
 def load_file(file):
@@ -157,6 +160,10 @@ def initialize():
     ## make sure that open after mid-top is 0 if no mid-stop
     Timers['Opn2'] = 0 if Timers['Mid'] == 0 else Timers['Opn2']
     
+    # if wired as normally open, (chinese operator), turn on stop output
+    if very_first_run and Parametres['StopOut'] == 'N.OPN':
+        Output['Stop'].value(1)
+    
     current_timer.deinit()
     #temp_timer.deinit()
     
@@ -182,19 +189,19 @@ def readPin(pin, counter = Parametres['btn_lect'] , delay = delay_readPin):
     
     return False
 
-def writePin(pin, delay):
+def writePin(pin, delay, perm_counter = False, LimitOn = None):
     """Write high value to pin, pause in ms"""
-    
+     
     if not stop_request:
         if pin == 'Open' and Input['OpenLmt'].value() != 1:
-            if Parametres['Compteur'] == 'OpnLmt':
+            if Parametres['Compteur'] == 'ClsLmt'  and perm_counter == True and LimitOn == 'CloseLmt':
                 Output['Counter'].value(1)
             Output[pin].value(1)
             lcd.clear_line(1)
             lcd.clear_line(2)
             lcd.write_line_center("EN OUVERTURE ", 1)
         elif pin == 'Close' and Input['CloseLmt'].value() != 1:
-            if Parametres['Compteur'] == 'ClsLmt':
+            if Parametres['Compteur'] == 'OpnLmt' and perm_counter == True and LimitOn == 'OpenLmt':
                 Output['Counter'].value(1)
             Output[pin].value(1)
             lcd.clear_line(1)
@@ -234,10 +241,17 @@ def lcd_count_down(duration):
 def stopled_off(timer):
     """Turn off stop led and signal when stop button is declicked."""
     
-    global stop_request, stop_token_first
+    global stop_request, stop_token_first, very_first_run
+    
+    very_first_run = False
     
     if Input['Stop'].value() == 0 and stop_token_first:
-        Output['Stop'].value(0)
+        if Parametres['StopOut'] == 'N.OPN':
+            Output['Stop'].value(1)
+        else:
+            Output['Stop'].value(0)
+
+
         stop_token_first = False
         stopled_timer.deinit()
 
@@ -258,8 +272,12 @@ def stop_signal_handler(pin):
     if (read_count == Parametres['btn_lect'] ) and stop_token_first == False: 
         stop_token_first = True
         stop_request = True
-        Output['Stop'].value(1)
-    
+        
+        if Parametres['StopOut'] == 'N.OPN':
+            Output['Stop'].value(0)
+        else:
+            Output['Stop'].value(1)
+
     utime.sleep_ms(Parametres['btn_dura'])
 
 def read_current(timer):
@@ -293,6 +311,8 @@ def Logic_loop():
     global stop_request
     global is_running
     
+    cycle_counter = 0
+    
     is_running = True
     
     while not stop_request:
@@ -307,6 +327,7 @@ def Logic_loop():
         elif state == 1:            # door fully closed, close limit triggers
             if readPin('CloseLmt'):
                 current_timer.deinit()
+                cycle_counter += 1
                 lcd.clear_line(1)
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE FERMEE", 1)
@@ -315,7 +336,7 @@ def Logic_loop():
                     read_temp()    # read and show temperature
                     
                 lcd_count_down(Timers['Cls'])
-                writePin('Open', Parametres['btn_dura'])
+                writePin('Open', Parametres['btn_dura'], perm_counter = True, LimitOn = 'CloseLmt')
                 state = 2
                 gc.collect()        # force gc collection
                 #print(gc.mem_free())
@@ -326,8 +347,8 @@ def Logic_loop():
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn1'])
-                writePin('Close', Parametres['btn_dura'])
-                state = 1 if Timers['Mid'] == 0 else 3
+                writePin('Close', Parametres['btn_dura'], perm_counter = True, LimitOn = 'OpenLmt')
+                state = 3 if cycle_counter > 0 and cycle_counter % Parametres['MidStop'] == 0 else 1
         elif state == 3:             # mi-stop
             current_timer.deinit()
             lcd.clear_line(1)
@@ -343,7 +364,7 @@ def Logic_loop():
                 lcd.clear_line(3)
                 lcd.write_line_center("PORTE OUVERTE", 1)
                 lcd_count_down(Timers['Opn2'])
-                writePin('Close', Parametres['btn_dura'])
+                writePin('Close', Parametres['btn_dura'], perm_counter = True, LimitOn ='OpenLmt')
                 state = 1
         else:
             print("ERREUR")
@@ -743,6 +764,8 @@ def Config_Parametres():
                         value = 2 if value == 4 else 4
                     elif key == 'LCD_co':
                         value = 16 if value == 20 else 20
+                    elif key == 'StopOut':
+                        value = 'N.CLS' if value == 'N.OPN' else 'N.OPN'
                     elif key == 'Compteur':
                         if value == 'OpnLmt':
                             value = 'ClsLmt'
@@ -759,6 +782,8 @@ def Config_Parametres():
                         value = 2 if value == 4 else 4
                     elif key == 'LCD_co':
                         value = 16 if value == 20 else 20
+                    elif key == 'StopOut':
+                        value = 'N.CLS' if value == 'N.OPN' else 'N.OPN'
                     elif key == 'Compteur':
                         if value == 'OpnLmt':
                             value = 'ClsLmt'
@@ -901,5 +926,3 @@ Input['Stop'].irq(trigger=Pin.IRQ_RISING, handler=stop_signal_handler)
 
 if __name__ == '__main__':
     main()
-
-       
