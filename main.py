@@ -1,5 +1,5 @@
 ###########
-version = '7.4'
+version = '7.4.1'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -355,7 +355,7 @@ def Logic_loop():
             lcd.clear_line(3)
             lcd.write_line_center("MI-ARRET", 1)
             lcd_count_down(Timers['Mid'])
-            writePin('Open', Parametres['btn_dura'])
+            writePin('Counter', Parametres['btn_dura'])
             state = 4
         elif state == 4:              # door fully opened, after mid-stop
             if readPin('OpenLmt'):
