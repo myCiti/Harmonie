@@ -1,5 +1,5 @@
 ###########
-version = '7.4.1'
+version = '7.5'
 ## Input pins wired with PULL_DOWN
 ## Mid-stop = 0 to disable
 ## Add read amperage and temperature
@@ -47,6 +47,7 @@ config = {
         'btn_dura'    : 100,
         'btn_lect'    : 2,
         'MidStop'     : 2,
+        'MdStpPin'    : 'Open',      # Send midstop output signal to Open pin or Counter pin (chinese operator)
         'StopOut'     :  'N.CLS'    # N.CLS = Normally close, N.OPN = Normally open
     }
 }
@@ -193,7 +194,7 @@ def writePin(pin, delay, perm_counter = False, LimitOn = None):
     """Write high value to pin, pause in ms"""
      
     if not stop_request:
-        if pin == 'Open' and Input['OpenLmt'].value() != 1:
+        if pin in ['Open', 'Counter'] and Input['OpenLmt'].value() != 1:
             if Parametres['Compteur'] == 'ClsLmt'  and perm_counter == True and LimitOn == 'CloseLmt':
                 Output['Counter'].value(1)
             Output[pin].value(1)
@@ -355,7 +356,12 @@ def Logic_loop():
             lcd.clear_line(3)
             lcd.write_line_center("MI-ARRET", 1)
             lcd_count_down(Timers['Mid'])
-            writePin('Counter', Parametres['btn_dura'])
+            
+            if Parametres['MdStpPin'] == 'OPEN':
+                writePin('Open', Parametres['btn_dura'])
+            else:
+                writePin('Counter', Parametres['btn_dura'])
+            
             state = 4
         elif state == 4:              # door fully opened, after mid-stop
             if readPin('OpenLmt'):
@@ -772,10 +778,12 @@ def Config_Parametres():
                         elif value == 'ClsLmt':
                             value = 'Inactiv'
                         else:
-                            value = 'OpnLmt'
-                            
+                            value = 'OpnLmt' 
+                    elif key == 'MdStpPin':
+                        value = 'OPEN' if value == 'COUNTER' else 'COUNTER'
                     else:
                         value += 1
+                        
                 elif sw_value == -1 or readPin('Down'):
                     if readPin('Down'): delay_ms = 200
                     if key == 'LCD_li':
@@ -790,11 +798,13 @@ def Config_Parametres():
                         elif value == 'ClsLmt':
                             value = 'Inactiv'
                         else:
-                            value = 'OpnLmt'
-                            
+                            value = 'OpnLmt'         
+                    elif key == 'MdStpPin':
+                        value = 'OPEN' if value == 'COUNTER' else 'COUNTER'
                     else:
                         value -= 1
-                        if value <= 1: value = 0
+                        if value <= 1: value = 1
+                        
                 elif rotary_sw.select():
                     Parametres.update({key: value})
                     config['Parametres'] = Parametres
